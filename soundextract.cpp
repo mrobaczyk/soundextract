@@ -228,6 +228,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 				bank += ".bnk";
 				tinyxml2::XMLDocument doc;
 				tinyxml2::XMLNode *xml = &doc;
+				tinyxml2::XMLNode* child = &doc;
 				doc.LoadFile(lBuf);
 				xml = xml->FirstChildElement("SoundBanksInfo");
 				if (!xml)
@@ -245,10 +246,10 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 					return false;
 				}
 				bool found = false;
-				xml = xml->FirstChildElement("ReferencedStreamedFiles");
-				if (xml)
+				child = xml->FirstChildElement("ReferencedStreamedFiles");
+				if (child)
 				{
-					ParseFiles(xml, true);
+					ParseFiles(child, true);
 					sounds.erase(std::remove_if(sounds.begin(), sounds.end(), [](const Sound & s)
 					{
 						std::string fname = path;
@@ -261,11 +262,10 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 					), sounds.end());
 					found = true;
 				}
-				xml = xml->Parent();
-				xml = xml->FirstChildElement("IncludedMemoryFiles");
-				if (xml)
+				child = xml->FirstChildElement("IncludedMemoryFiles");
+				if (child)
 				{
-					ParseFiles(xml, false);
+					ParseFiles(child, false);
 					found = true;
 				}
 				std::sort(sounds.begin(), sounds.end(), [](Sound s1, Sound s2)
