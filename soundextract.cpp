@@ -228,7 +228,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 				bank += ".bnk";
 				tinyxml2::XMLDocument doc;
 				tinyxml2::XMLNode *xml = &doc;
-				tinyxml2::XMLNode* child = &doc;
+				tinyxml2::XMLNode* child;
 				doc.LoadFile(lBuf);
 				xml = xml->FirstChildElement("SoundBanksInfo");
 				if (!xml)
