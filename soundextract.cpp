@@ -294,6 +294,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 				ListView_SetColumnWidth(list, 0, LVSCW_AUTOSIZE);
 				LoadBank(bank);
 			}
+			break;
 		}
 		case IDC_EXTRACT:
 		{
@@ -561,10 +562,12 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 					}
 				}
 			}
+			break;
 		}
 		default:
 			return false;
 		}
+		break;
 	default:
 		return false;
 	}
