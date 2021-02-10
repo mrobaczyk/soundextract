@@ -586,8 +586,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 	return true;
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /* hPrevInstance */,
-	LPSTR /* lpCmdLine */, int /* nCmdShow */)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /* hPrevInstance */, LPSTR /* lpCmdLine */, int /* nCmdShow */)
 {
 	return DialogBox(hInstance, MAKEINTRESOURCE(IDD_MAIN), nullptr, DlgProc);
 }
