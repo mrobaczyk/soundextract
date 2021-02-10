@@ -128,6 +128,8 @@ struct Sound
 	bool streamed;
 };
 
+int revorb(const char* fname);
+
 char *datachunk;
 std::string path;
 std::vector<MediaHeader> media;
@@ -188,7 +190,6 @@ void ParseFiles(tinyxml2::XMLNode *xml, bool streamed)
 	}
 }
 
-int revorb(const char *fname);
 BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam */)
 {
 	switch (Message)
