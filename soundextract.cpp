@@ -130,14 +130,14 @@ struct Sound
 
 int revorb(const char* fname);
 
-char *datachunk;
+char* datachunk;
 std::string path;
 std::vector<MediaHeader> media;
 std::vector<Sound> sounds;
 
 void LoadBank(std::string fname)
 {
-	FILE *f = fopen(fname.c_str(), "rb");
+	FILE* f = fopen(fname.c_str(), "rb");
 	SubchunkHeader sc;
 	fread(&sc, sizeof(sc), 1, f);
 	if (sc.dwTag == BankHeaderChunkID)
@@ -170,9 +170,9 @@ void LoadBank(std::string fname)
 	fclose(f);
 }
 
-void ParseFiles(tinyxml2::XMLNode *xml, bool streamed)
+void ParseFiles(tinyxml2::XMLNode* xml, bool streamed)
 {
-	for (xml = xml->FirstChildElement("File");xml;xml = xml->NextSiblingElement("File"))
+	for (xml = xml->FirstChildElement("File"); xml; xml = xml->NextSiblingElement("File"))
 	{
 		tinyxml2::XMLNode* pPrefetchSize = xml->FirstChildElement("PrefetchSize");
 		if (pPrefetchSize != nullptr) {
@@ -497,7 +497,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 				bank.erase(bank.rfind('.'));
 				bank += ".bnk";
 				tinyxml2::XMLDocument doc;
-				tinyxml2::XMLNode *xml = &doc;
+				tinyxml2::XMLNode* xml = &doc;
 				tinyxml2::XMLNode* child;
 				doc.LoadFile(lBuf);
 				xml = xml->FirstChildElement("SoundBanksInfo");
@@ -520,7 +520,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 				if (child)
 				{
 					ParseFiles(child, true);
-					sounds.erase(std::remove_if(sounds.begin(), sounds.end(), [](const Sound & s)
+					sounds.erase(std::remove_if(sounds.begin(), sounds.end(), [](const Sound& s)
 					{
 						std::string fname = path;
 						fname += L'\\';
@@ -552,7 +552,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 				column.pszText = const_cast<LPSTR>("Sound");
 				column.fmt = LVCFMT_LEFT;
 				ListView_InsertColumn(list, 0, &column);
-				for (auto &x : sounds)
+				for (auto& x : sounds)
 				{
 					LVITEM item;
 					memset(&item, 0, sizeof(item));
