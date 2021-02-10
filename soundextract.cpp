@@ -172,6 +172,11 @@ void ParseFiles(tinyxml2::XMLNode *xml, bool streamed)
 {
 	for (xml = xml->FirstChildElement("File");xml;xml = xml->NextSiblingElement("File"))
 	{
+		tinyxml2::XMLNode* pPrefetchSize = xml->FirstChildElement("PrefetchSize");
+		if (pPrefetchSize != nullptr) {
+			continue; //this file might be abnormally cut, just don't parse it further
+		}
+
 		Sound sound;
 		sound.streamed = streamed;
 		sound.id = xml->ToElement()->Attribute("Id");
