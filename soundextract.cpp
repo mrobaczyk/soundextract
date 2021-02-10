@@ -190,6 +190,270 @@ void ParseFiles(tinyxml2::XMLNode *xml, bool streamed)
 	}
 }
 
+BOOL Extract(HWND hwnd, int item)
+{
+	char* outdata = nullptr;
+	long size = 0;
+	if (sounds[item].streamed)
+	{
+		std::string infname = path;
+		infname += '\\';
+		infname += sounds[item].id;
+		infname += ".wem";
+		FILE* infile = fopen(infname.c_str(), "rb");
+		fseek(infile, 0, SEEK_END);
+		size = ftell(infile);
+		fseek(infile, 0, SEEK_SET);
+		outdata = new char[size];
+		fread(outdata, sizeof(outdata[0]), size, infile);
+		fclose(infile);
+	}
+	else
+	{
+		MediaID id = stoul(sounds[item].id);
+		for (unsigned int i = 0; i < media.size(); i++)
+		{
+			if (media[i].id == id)
+			{
+				size = media[i].uSize;
+				outdata = new char[size];
+				memcpy(outdata, &datachunk[media[i].uOffset], size);
+				break;
+			}
+		}
+	}
+	char* ptr = outdata;
+	if (*reinterpret_cast<Fourcc*>(ptr) != RIFFChunkId)
+	{
+		delete[] outdata;
+		return true;
+	}
+	ptr += sizeof(Fourcc);
+	ptr += sizeof(UInt32);
+	if (*reinterpret_cast<Fourcc*>(ptr) != WAVEChunkId)
+	{
+		delete[] outdata;
+		return true;
+	}
+	ptr += sizeof(Fourcc);
+	ChunkHeader header = *reinterpret_cast<ChunkHeader*>(ptr);
+	if (header.ChunkId != fmtChunkId)
+	{
+		delete[] outdata;
+		return true;
+	}
+	ptr += sizeof(ChunkHeader);
+	WaveFormatExtensible format = *reinterpret_cast<WaveFormatExtensible*>(ptr);
+	ptr += sizeof(WaveFormatExtensible);
+	std::string ext;
+	if (format.wFormatTag == 2)
+	{
+		if (header.dwChunkSize != sizeof(WaveFormatExtensible))
+		{
+			delete[] outdata;
+			return true;
+		}
+		ext = ".wav";
+	}
+	else if (format.wFormatTag == 0xFFFE)
+	{
+		if (header.dwChunkSize != sizeof(WaveFormatExtensible))
+		{
+			delete[] outdata;
+			return true;
+		}
+		ext = ".wav";
+	}
+	else if (format.wFormatTag == 0xFFFF)
+	{
+		if (header.dwChunkSize != sizeof(WaveFormatExtensible) + sizeof(VorbisHeader))
+		{
+			delete[] outdata;
+			return true;
+		}
+		ext = ".ogg";
+	}
+	std::string sfname = sounds[item].name;
+	sfname += ext;
+	char lBuf[MAX_PATH] = "";
+	strcpy(lBuf, sfname.c_str());
+	OPENFILENAME of;
+	memset(&of, 0, sizeof(OPENFILENAME));
+	of.lStructSize = sizeof(OPENFILENAME);
+	of.hwndOwner = hwnd;
+	of.hInstance = nullptr;
+	if (ext == ".wav")
+	{
+		of.lpstrFilter = "WAV files\0*.wav\0\0";
+	}
+	else
+	{
+		of.lpstrFilter = "OGG files\0*.ogg\0\0";
+	}
+	of.lpstrCustomFilter = nullptr;
+	of.nMaxCustFilter = 0;
+	of.nFilterIndex = 0;
+	of.lpstrFile = lBuf;
+	of.nMaxFile = MAX_PATH;
+	of.lpstrFileTitle = nullptr;
+	of.nMaxFileTitle = 0;
+	of.lpstrInitialDir = nullptr;
+	of.lpstrTitle = nullptr;
+	of.Flags = OFN_OVERWRITEPROMPT;
+	of.nFileOffset = 0;
+	of.nFileExtension = 0;
+	of.lpstrDefExt = nullptr;
+	of.lCustData = 0;
+	of.lpfnHook = nullptr;
+	of.lpTemplateName = nullptr;
+	if (GetSaveFileName(&of))
+	{
+		if (format.wFormatTag == 2)
+		{
+			format.wFormatTag = 0x11;
+			format.wSamplesPerBlock = (format.nBlockAlign - 4 * format.nChannels) * 8 / (format.wBitsPerSample * format.nChannels) + 1;
+			char* datapos = nullptr;
+			UInt32 datasize = 0;
+			while (ptr < outdata + size)
+			{
+				header = *reinterpret_cast<ChunkHeader*>(ptr);
+				ptr += sizeof(ChunkHeader);
+				if (header.ChunkId == dataChunkId)
+				{
+					datapos = ptr;
+					datasize = header.dwChunkSize;
+				}
+				ptr += header.dwChunkSize;
+			}
+			if (!datapos || !datasize)
+			{
+				delete[] outdata;
+				return true;
+			}
+			FILE* outfile = fopen(lBuf, "wb");
+			header.ChunkId = RIFFChunkId;
+			header.dwChunkSize = sizeof(Fourcc) + sizeof(ChunkHeader) + sizeof(WaveFormatExtensible) + sizeof(ChunkHeader) + datasize;
+			fwrite(&header, sizeof(header), 1, outfile);
+			Fourcc fcc = WAVEChunkId;
+			fwrite(&fcc, sizeof(fcc), 1, outfile);
+			header.ChunkId = fmtChunkId;
+			header.dwChunkSize = sizeof(WaveFormatExtensible);
+			fwrite(&header, sizeof(header), 1, outfile);
+			fwrite(&format, sizeof(format), 1, outfile);
+			header.ChunkId = dataChunkId;
+			header.dwChunkSize = datasize;
+			fwrite(&header, sizeof(header), 1, outfile);
+			if (format.nChannels > 1)
+			{
+				ptr = datapos;
+				static uint8_t transformInData[BUFSIZ], transformOutData[BUFSIZ];
+				uint8_t* transformIn = transformInData,
+					* transformOut = transformOutData;
+				size_t transformCount = BUFSIZ / format.nBlockAlign;
+				if (format.nBlockAlign > BUFSIZ)
+				{
+					transformIn = new uint8_t[2 * format.nBlockAlign];
+					transformOut = transformIn + format.nBlockAlign;
+					transformCount = 1;
+				}
+				for (size_t blockCount = 0; blockCount * format.nBlockAlign < datasize;)
+				{
+					size_t sz = format.nBlockAlign * transformCount;
+					if (datapos + datasize < ptr + sz)
+					{
+						sz = datapos + datasize - ptr;
+					}
+					memcpy(transformIn, ptr, sz);
+					ptr += sz;
+					size_t blockAmount = sz / format.nBlockAlign;
+					blockCount += blockAmount;
+					for (size_t block = 0; block < blockAmount; block++)
+					{
+						for (size_t n = 0; n < format.nBlockAlign / (format.nChannels * 4u); n++)
+						{
+							for (size_t s = 0; s < format.nChannels; s++)
+							{
+								reinterpret_cast<uint32_t*>(transformOut + block * format.nBlockAlign)[n * format.nChannels + s] = reinterpret_cast<uint32_t*>(transformIn + block * format.nBlockAlign)[s * format.nBlockAlign / (format.nChannels * 4) + n];
+							}
+						}
+					}
+					fwrite(transformOut, format.nBlockAlign, blockAmount, outfile);
+				}
+				if (format.nBlockAlign > BUFSIZ)
+				{
+					delete[] transformIn;
+				}
+			}
+			else
+			{
+				fwrite(datapos, 1, datasize, outfile);
+			}
+			fclose(outfile);
+			delete[] outdata;
+			return true;
+		}
+		else if (format.wFormatTag == 0xFFFE)
+		{
+			format.wFormatTag = 0x1;
+			char* datapos = nullptr;
+			UInt32 datasize = 0;
+			while (ptr < outdata + size)
+			{
+				header = *reinterpret_cast<ChunkHeader*>(ptr);
+				ptr += sizeof(ChunkHeader);
+				if (header.ChunkId == dataChunkId)
+				{
+					datapos = ptr;
+					datasize = header.dwChunkSize;
+				}
+				ptr += header.dwChunkSize;
+			}
+			if (!datapos || !datasize)
+			{
+				delete[] outdata;
+				return true;
+			}
+			FILE* outfile = fopen(lBuf, "wb");
+			header.ChunkId = RIFFChunkId;
+			header.dwChunkSize = sizeof(Fourcc) + sizeof(ChunkHeader) + sizeof(WaveFormatExtensible) + sizeof(ChunkHeader) + datasize;
+			fwrite(&header, sizeof(header), 1, outfile);
+			Fourcc fcc = WAVEChunkId;
+			fwrite(&fcc, sizeof(fcc), 1, outfile);
+			header.ChunkId = fmtChunkId;
+			header.dwChunkSize = sizeof(WaveFormatExtensible);
+			fwrite(&header, sizeof(header), 1, outfile);
+			fwrite(&format, sizeof(format), 1, outfile);
+			header.ChunkId = dataChunkId;
+			header.dwChunkSize = datasize;
+			fwrite(&header, sizeof(header), 1, outfile);
+			fwrite(datapos, 1, datasize, outfile);
+			fclose(outfile);
+			delete[] outdata;
+			return true;
+		}
+		else if (format.wFormatTag == 0xFFFF)
+		{
+			if (size && outdata)
+			{
+				char* fn = tmpnam(nullptr);
+				FILE* outfile = fopen(fn, "wb");
+				fwrite(outdata, sizeof(outdata[0]), size, outfile);
+				fclose(outfile);
+				{
+					Wwise_RIFF_Vorbis ww(fn);
+					ofstream out(lBuf, ios::binary);
+					ww.generate_ogg(out);
+				}
+				_unlink(fn);
+				revorb(lBuf);
+				delete[] outdata;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam */)
 {
 	switch (Message)
@@ -308,265 +572,7 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 			int item = ListView_GetNextItem(list, -1, LVNI_SELECTED);
 			if (item != -1)
 			{
-				char *outdata = nullptr;
-				long size = 0;
-				if (sounds[item].streamed)
-				{
-					std::string infname = path;
-					infname += '\\';
-					infname += sounds[item].id;
-					infname += ".wem";
-					FILE *infile = fopen(infname.c_str(), "rb");
-					fseek(infile, 0, SEEK_END);
-					size = ftell(infile);
-					fseek(infile, 0, SEEK_SET);
-					outdata = new char[size];
-					fread(outdata, sizeof(outdata[0]), size, infile);
-					fclose(infile);
-				}
-				else
-				{
-					MediaID id = stoul(sounds[item].id);
-					for (unsigned int i = 0; i < media.size(); i++)
-					{
-						if (media[i].id == id)
-						{
-							size = media[i].uSize;
-							outdata = new char[size];
-							memcpy(outdata, &datachunk[media[i].uOffset], size);
-							break;
-						}
-					}
-				}
-				char *ptr = outdata;
-				if (*reinterpret_cast<Fourcc *>(ptr) != RIFFChunkId)
-				{
-					delete[] outdata;
-					return true;
-				}
-				ptr += sizeof(Fourcc);
-				ptr += sizeof(UInt32);
-				if (*reinterpret_cast<Fourcc *>(ptr) != WAVEChunkId)
-				{
-					delete[] outdata;
-					return true;
-				}
-				ptr += sizeof(Fourcc);
-				ChunkHeader header = *reinterpret_cast<ChunkHeader *>(ptr);
-				if (header.ChunkId != fmtChunkId)
-				{
-					delete[] outdata;
-					return true;
-				}
-				ptr += sizeof(ChunkHeader);
-				WaveFormatExtensible format = *reinterpret_cast<WaveFormatExtensible *>(ptr);
-				ptr += sizeof(WaveFormatExtensible);
-				std::string ext;
-				if (format.wFormatTag == 2)
-				{
-					if (header.dwChunkSize != sizeof(WaveFormatExtensible))
-					{
-						delete[] outdata;
-						return true;
-					}
-					ext = ".wav";
-				}
-				else if (format.wFormatTag == 0xFFFE)
-				{
-					if (header.dwChunkSize != sizeof(WaveFormatExtensible))
-					{
-						delete[] outdata;
-						return true;
-					}
-					ext = ".wav";
-				}
-				else if (format.wFormatTag == 0xFFFF)
-				{
-					if (header.dwChunkSize != sizeof(WaveFormatExtensible) + sizeof(VorbisHeader))
-					{
-						delete[] outdata;
-						return true;
-					}
-					ext = ".ogg";
-				}
-				std::string sfname = sounds[item].name;
-				sfname += ext;
-				char lBuf[MAX_PATH] = "";
-				strcpy(lBuf, sfname.c_str());
-				OPENFILENAME of;
-				memset(&of, 0, sizeof(OPENFILENAME));
-				of.lStructSize = sizeof(OPENFILENAME);
-				of.hwndOwner = hwnd;
-				of.hInstance = nullptr;
-				if (ext == ".wav")
-				{
-					of.lpstrFilter = "WAV files\0*.wav\0\0";
-				}
-				else
-				{
-					of.lpstrFilter = "OGG files\0*.ogg\0\0";
-				}
-				of.lpstrCustomFilter = nullptr;
-				of.nMaxCustFilter = 0;
-				of.nFilterIndex = 0;
-				of.lpstrFile = lBuf;
-				of.nMaxFile = MAX_PATH;
-				of.lpstrFileTitle = nullptr;
-				of.nMaxFileTitle = 0;
-				of.lpstrInitialDir = nullptr;
-				of.lpstrTitle = nullptr;
-				of.Flags = OFN_OVERWRITEPROMPT;
-				of.nFileOffset = 0;
-				of.nFileExtension = 0;
-				of.lpstrDefExt = nullptr;
-				of.lCustData = 0;
-				of.lpfnHook = nullptr;
-				of.lpTemplateName = nullptr;
-				if (GetSaveFileName(&of))
-				{
-					if (format.wFormatTag == 2)
-					{
-						format.wFormatTag = 0x11;
-						format.wSamplesPerBlock = (format.nBlockAlign - 4 * format.nChannels) * 8 / (format.wBitsPerSample * format.nChannels) + 1;
-						char *datapos = nullptr;
-						UInt32 datasize = 0;
-						while (ptr < outdata + size)
-						{
-							header = *reinterpret_cast<ChunkHeader *>(ptr);
-							ptr += sizeof(ChunkHeader);
-							if (header.ChunkId == dataChunkId)
-							{
-								datapos = ptr;
-								datasize = header.dwChunkSize;
-							}
-							ptr += header.dwChunkSize;
-						}
-						if (!datapos || !datasize)
-						{
-							delete[] outdata;
-							return true;
-						}
-						FILE *outfile = fopen(lBuf, "wb");
-						header.ChunkId = RIFFChunkId;
-						header.dwChunkSize = sizeof(Fourcc) + sizeof(ChunkHeader) + sizeof(WaveFormatExtensible) + sizeof(ChunkHeader) + datasize;
-						fwrite(&header, sizeof(header), 1, outfile);
-						Fourcc fcc = WAVEChunkId;
-						fwrite(&fcc, sizeof(fcc), 1, outfile);
-						header.ChunkId = fmtChunkId;
-						header.dwChunkSize = sizeof(WaveFormatExtensible);
-						fwrite(&header, sizeof(header), 1, outfile);
-						fwrite(&format, sizeof(format), 1, outfile);
-						header.ChunkId = dataChunkId;
-						header.dwChunkSize = datasize;
-						fwrite(&header, sizeof(header), 1, outfile);
-						if (format.nChannels > 1)
-						{
-							ptr = datapos;
-							static uint8_t transformInData[BUFSIZ], transformOutData[BUFSIZ];
-							uint8_t *transformIn = transformInData,
-								*transformOut = transformOutData;
-							size_t transformCount = BUFSIZ / format.nBlockAlign;
-							if (format.nBlockAlign > BUFSIZ)
-							{
-								transformIn = new uint8_t[2 * format.nBlockAlign];
-								transformOut = transformIn + format.nBlockAlign;
-								transformCount = 1;
-							}
-							for (size_t blockCount = 0; blockCount * format.nBlockAlign < datasize;)
-							{
-								size_t sz = format.nBlockAlign * transformCount;
-								if (datapos + datasize < ptr + sz)
-								{
-									sz = datapos + datasize - ptr;
-								}
-								memcpy(transformIn, ptr, sz);
-								ptr += sz;
-								size_t blockAmount = sz / format.nBlockAlign;
-								blockCount += blockAmount;
-								for (size_t block = 0; block < blockAmount; block++)
-								{
-									for (size_t n = 0; n < format.nBlockAlign / (format.nChannels * 4u); n++)
-									{
-										for (size_t s = 0; s < format.nChannels; s++)
-										{
-											reinterpret_cast<uint32_t *>(transformOut + block * format.nBlockAlign)[n * format.nChannels + s] = reinterpret_cast<uint32_t *>(transformIn + block * format.nBlockAlign)[s * format.nBlockAlign / (format.nChannels * 4) + n];
-										}
-									}
-								}
-								fwrite(transformOut, format.nBlockAlign, blockAmount, outfile);
-							}
-							if (format.nBlockAlign > BUFSIZ)
-							{
-								delete[] transformIn;
-							}
-						}
-						else
-						{
-							fwrite(datapos, 1, datasize, outfile);
-						}
-						fclose(outfile);
-						delete[] outdata;
-						return true;
-					}
-					else if (format.wFormatTag == 0xFFFE)
-					{
-						format.wFormatTag = 0x1;
-						char *datapos = nullptr;
-						UInt32 datasize = 0;
-						while (ptr < outdata + size)
-						{
-							header = *reinterpret_cast<ChunkHeader *>(ptr);
-							ptr += sizeof(ChunkHeader);
-							if (header.ChunkId == dataChunkId)
-							{
-								datapos = ptr;
-								datasize = header.dwChunkSize;
-							}
-							ptr += header.dwChunkSize;
-						}
-						if (!datapos || !datasize)
-						{
-							delete[] outdata;
-							return true;
-						}
-						FILE *outfile = fopen(lBuf, "wb");
-						header.ChunkId = RIFFChunkId;
-						header.dwChunkSize = sizeof(Fourcc) + sizeof(ChunkHeader) + sizeof(WaveFormatExtensible) + sizeof(ChunkHeader) + datasize;
-						fwrite(&header, sizeof(header), 1, outfile);
-						Fourcc fcc = WAVEChunkId;
-						fwrite(&fcc, sizeof(fcc), 1, outfile);
-						header.ChunkId = fmtChunkId;
-						header.dwChunkSize = sizeof(WaveFormatExtensible);
-						fwrite(&header, sizeof(header), 1, outfile);
-						fwrite(&format, sizeof(format), 1, outfile);
-						header.ChunkId = dataChunkId;
-						header.dwChunkSize = datasize;
-						fwrite(&header, sizeof(header), 1, outfile);
-						fwrite(datapos, 1, datasize, outfile);
-						fclose(outfile);
-						delete[] outdata;
-						return true;
-					}
-					else if (format.wFormatTag == 0xFFFF)
-					{
-						if (size && outdata)
-						{
-							char *fn = tmpnam(nullptr);
-							FILE *outfile = fopen(fn, "wb");
-							fwrite(outdata, sizeof(outdata[0]), size, outfile);
-							fclose(outfile);
-							{
-								Wwise_RIFF_Vorbis ww(fn);
-								ofstream out(lBuf, ios::binary);
-								ww.generate_ogg(out);
-							}
-							_unlink(fn);
-							revorb(lBuf);
-							delete[] outdata;
-							return true;
-						}
-					}
-				}
+				Extract(hwnd, item);
 			}
 			break;
 		}
