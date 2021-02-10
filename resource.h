@@ -6,6 +6,7 @@
 #define IDC_SOUNDS                      1001
 #define IDC_OPEN                        1002
 #define IDC_EXTRACT                     1003
+#define IDC_EXTRACT_ALL                 1005
 
 // Next default values for new objects
 // 
