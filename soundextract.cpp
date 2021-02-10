@@ -273,7 +273,7 @@ BOOL Extract(HWND hwnd, int item)
 		}
 		ext = ".ogg";
 	}
-	std::string sfname = sounds[item].name;
+	std::string sfname = "C:\\soundextract\\" + sounds[item].name;
 	sfname += ext;
 	char lBuf[MAX_PATH] = "";
 	strcpy(lBuf, sfname.c_str());
@@ -306,7 +306,7 @@ BOOL Extract(HWND hwnd, int item)
 	of.lCustData = 0;
 	of.lpfnHook = nullptr;
 	of.lpTemplateName = nullptr;
-	if (GetSaveFileName(&of))
+	if (true /*GetSaveFileName(&of)*/)
 	{
 		if (format.wFormatTag == 2)
 		{
@@ -573,6 +573,14 @@ BOOL CALLBACK DlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM /* lParam *
 			if (item != -1)
 			{
 				Extract(hwnd, item);
+			}
+			break;
+		}
+		case IDC_EXTRACT_ALL:
+		{
+			for (size_t i = 0; i < sounds.size(); i++)
+			{
+				Extract(hwnd, i);
 			}
 			break;
 		}
